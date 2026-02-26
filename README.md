@@ -27,3 +27,9 @@ DB is seeded randomly by script
 # Agent lightning loop
 
 Runs every day on bad rated chats, teaching an agent new dialogues based on failed ones (marked finger down on telegram)
+
+
+# Data
+
+project/data/info.md is extended information about car dealership service for AI agent. This is information that he should know
+on 10/10
