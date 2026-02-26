@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
 
+    TELEGRAM_BOT_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
 

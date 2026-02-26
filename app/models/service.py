@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
@@ -35,3 +36,17 @@ class ServiceSlot(Document):
 
     class Settings:
         name = "service_slots"
+
+
+class Car(BaseModel):
+    name: str
+    year: int
+
+
+class Parts(Document):
+    name: str
+    price: Decimal
+    models: List[Car]
+
+    class Settings:
+        name = "car_parts"
