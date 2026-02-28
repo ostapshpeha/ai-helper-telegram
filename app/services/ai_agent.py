@@ -120,7 +120,7 @@ async def read_knowledge_base(ctx: RunContext[None], search_query: str) -> str:
 
         return "\n".join(lines)
 
-    except Exception as e:
+    except Exception:
         logger.exception("read_knowledge_base failed")
         return "Системна помилка доступу до бази знань. Скажи клієнту, що інформація тимчасово недоступна."
 
@@ -158,7 +158,7 @@ async def read_db_slots(ctx: RunContext[None], search_query: str) -> str:
         lines.append("\nЗапропонуй клієнту один із цих варіантів.")
         return "\n".join(lines)
 
-    except Exception as e:
+    except Exception:
         logger.exception("read_db_slots failed")
         return "Виникла технічна помилка доступу до бази даних. Скажи клієнту, що система запису тимчасово недоступна."
 
@@ -191,7 +191,7 @@ async def read_parts_price(ctx: RunContext[None], search_query: str) -> str:
         lines.append("\nЦіни актуальні на момент останнього оновлення бази.")
         return "\n".join(lines)
 
-    except Exception as e:
+    except Exception:
         logger.exception("read_parts_price failed")
         return "Виникла технічна помилка. Скажи клієнту, що ціни тимчасово недоступні."
 
