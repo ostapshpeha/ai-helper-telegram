@@ -21,7 +21,7 @@ Run on telegram
 # DB
 
 This is simple example of database - mechanic slots, booked by whom, customer, also collection of car parts and prices
-DB is seeded randomly by script
+DB is seeded randomly by script. MongoAtlas is configured as vector DB
 
 
 # Agent lightning loop
