@@ -1,7 +1,11 @@
 import asyncio
+import html
 import logging
 import os
+import re
+from dataclasses import dataclass
 
+from aiogram import Bot
 from google import genai
 from google.genai import types
 from pydantic_ai import Agent, RunContext
@@ -12,6 +16,13 @@ from app.core.database import get_db
 from app.models.service import Mechanic, ServiceSlot, SlotStatus, Parts
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentDeps:
+    bot: Bot
+    user_id: int
+
 
 os.environ.setdefault("GEMINI_API_KEY", settings.GEMINI_API_KEY)
 
@@ -24,24 +35,28 @@ model = GoogleModel("gemini-3-flash-preview")
 
 honda_agent = Agent(
     model=model,
+    deps_type=AgentDeps,
     system_prompt=(
         "Ти — преміальний сервісний консультант дилерського центру Honda та Acura. "
-        "Твоя мета — допомагати клієнтам, відповідати на їхні технічні питання та записувати на сервіс.\n\n"
+        "Твоя мета — допомагати клієнтам, відповідати на їхні технічні питання та записувати на сервіс."
+        "Твій пріорітет це давати номер телефону відповідного відділу (read_knowledge_base)."
+        "Ніколи не видумуй номер\n\n"
         "ВАЖЛИВО: Твої повідомлення будуть відображатися в Telegram. "
         "Для форматування тексту використовуй ТІЛЬКИ HTML-теги: <b>для жирного тексту</b>, <i>для курсиву</i>. "
-        "КАТЕГОРИЧНО ЗАБОРОНЕНО використовувати зірочки (** або *) для форматування, інакше система зламається.\n\n"
+        "ЗАБОРОНЕНО використовувати зірочки (** або *) для форматування.\n\n"
         "Правила:\n"
         "1. Будь ввічливим, емпатичним та професійним.\n"
         "2. Якщо клієнт питає про характеристики, комплектації або ціни авто в нашому салоні — "
         "ОБОВ'ЯЗКОВО використовуй інструмент read_knowledge_base.\n"
         "3. Ніколи не вигадуй ціни на сервісні роботи. Кажи: "
-        "'Точну вартість майстер зможе назвати після огляду автомобіля'. "
+        "'Точну вартість майстер зможе назвати після огляду автомобіля'."
         "Ціни на запчастини — тільки з бази даних через інструмент read_parts_price.\n"
         "4. Якщо клієнт хоче записатися на сервіс — "
-        "використовуй інструмент read_db_slots."
-        "Якщо клієнт хоче записатись на тест драйв - дай йому номер відповідального\n"
+        "використовуй інструмент read_db_slots\n"
         "5. Ніколи не рекомендуй клієнту самостійно ремонтувати авто.\n"
-        "6. Відповідай виключно українською мовою."
+        "6. Якщо клієнт надає номер телефону або просить передзвонити — "
+        "ОБОВ'ЯЗКОВО використовуй інструмент request_callback, щоб передати контакт персоналу.\n"
+        "7. Відповідай виключно українською мовою."
     ),
 )
 
@@ -156,8 +171,9 @@ async def read_parts_price(ctx: RunContext[None], search_query: str) -> str:
     """
     logger.info("read_parts_price: %s", search_query)
     try:
+        safe_query = re.escape(search_query)
         parts = await Parts.find(
-            {"name": {"$regex": search_query, "$options": "i"}}
+            {"name": {"$regex": safe_query, "$options": "i"}}
         ).to_list()
 
         if not parts:
@@ -178,3 +194,42 @@ async def read_parts_price(ctx: RunContext[None], search_query: str) -> str:
     except Exception as e:
         logger.exception("read_parts_price failed")
         return "Виникла технічна помилка. Скажи клієнту, що ціни тимчасово недоступні."
+
+
+@honda_agent.tool
+async def request_callback(
+    ctx: RunContext[AgentDeps],
+    phone: str,
+    name: str = "",
+    car_model: str = "",
+    issue: str = "",
+) -> str:
+    """
+    Використовуй цей інструмент, коли клієнт надає номер телефону або просить передзвонити.
+    Передає контактні дані клієнта персоналу через Telegram.
+    phone — номер телефону клієнта (обов'язково).
+    name — ім'я клієнта (якщо відоме з діалогу).
+    car_model — модель автомобіля (якщо відома з діалогу).
+    issue — причина звернення (якщо відома з діалогу).
+    """
+    logger.info("request_callback: phone=%s user_id=%s", phone, ctx.deps.user_id)
+    try:
+        lines = ["📞 <b>Новий запит на передзвін</b>\n"]
+        if name:
+            lines.append(f"👤 Ім'я: {html.escape(name)}")
+        lines.append(f"📱 Телефон: {html.escape(phone)}")
+        if car_model:
+            lines.append(f"🚗 Модель: {html.escape(car_model)}")
+        if issue:
+            lines.append(f"🔧 Питання: {html.escape(issue)}")
+        lines.append(f"\n🤖 Telegram ID клієнта: {ctx.deps.user_id}")
+
+        await ctx.deps.bot.send_message(
+            chat_id=settings.STAFF_CHAT_ID,
+            text="\n".join(lines),
+        )
+        return "Контактні дані передано персоналу. Наш менеджер зв'яжеться з клієнтом найближчим часом."
+
+    except Exception:
+        logger.exception("request_callback failed")
+        return "Виникла помилка при передачі контакту. Запропонуй клієнту зателефонувати напряму."
