@@ -9,7 +9,7 @@ async def lifespan(app: FastAPI):
     yield
     print("🛑Server stopped")
 
-app = FastAPI(title="Honda AI Assistant", lifespan=lifespan)
+app = FastAPI(title="Honda AI Assistant", lifespan=lifespan, docs_url=None, redoc_url=None)
 
 @app.get("/health")
 async def health_check():

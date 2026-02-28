@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 from enum import IntEnum
 from pydantic import Field
 from beanie import Document
@@ -15,9 +15,9 @@ class ChatLog(Document):
     session_id: str
     user_message: str
     agent_response: str
-    tools_called: List[str] = []  # Наприклад: ["check_slots", "book_slot"]
+    tools_called: List[str] = []
     feedback: FeedbackScore = FeedbackScore.NEUTRAL
-    created_at: datetime = Field(default_factory=datetime.now(datetime.UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.utcnow())
 
     class Settings:
         name = "chat_logs"
