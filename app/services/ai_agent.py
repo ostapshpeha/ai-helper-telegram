@@ -1,16 +1,21 @@
+import asyncio
 import os
-from functools import lru_cache
-from pathlib import Path
 
+from google import genai
+from google.genai import types
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.google import GoogleModel
 
 from app.core.config import settings
+from app.core.database import get_db
 from app.models.service import Mechanic, ServiceSlot, SlotStatus, Parts
 
-_KB_PATH = Path(__file__).parent.parent.parent / "data" / "info.md"
-
 os.environ.setdefault("GEMINI_API_KEY", settings.GEMINI_API_KEY)
+
+ai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+_VECTOR_INDEX = "vector_index"
+_TOP_K = 5
 
 model = GoogleModel("gemini-3-flash-preview")
 
@@ -26,33 +31,77 @@ honda_agent = Agent(
         "3. Ніколи не вигадуй ціни на сервісні роботи. Кажи: "
         "'Точну вартість майстер зможе назвати після огляду автомобіля'. "
         "Ціни на запчастини — тільки з бази даних через інструмент read_parts_price.\n"
-        "4. Якщо клієнт хоче записатися на сервіс або питає про вільний час — "
-        "використовуй інструмент read_db_slots.\n"
+        "4. Якщо клієнт хоче записатися на сервіс — "
+        "використовуй інструмент read_db_slots."
+        "Якщо клієнт хоче записатись на тест драйв - дай йому номер відповідального\n"
         "5. Ніколи не рекомендуй клієнту самостійно ремонтувати авто.\n"
         "6. Відповідай виключно українською мовою."
     ),
 )
 
 
-@lru_cache(maxsize=1)
-def _load_knowledge_base() -> str:
-    return _KB_PATH.read_text(encoding="utf-8")
+async def _embed_query(text: str) -> list[float]:
+    response = await asyncio.to_thread(
+        lambda: ai_client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=768),
+        )
+    )
+    return response.embeddings[0].values
 
 
 @honda_agent.tool
-def read_knowledge_base(ctx: RunContext[None], search_query: str) -> str:
+async def read_knowledge_base(ctx: RunContext[None], search_query: str) -> str:
     """
     Використовуй цей інструмент, щоб отримати інформацію про автомобілі Honda та Acura:
     комплектації, ціни, послуги салону, детейлінг.
     """
     print(f"[tool] read_knowledge_base: '{search_query}'")
     try:
-        content = _load_knowledge_base()
-        return (
-            f"Ось вміст бази знань. Знайди тут відповідь на запит клієнта:\n\n{content}"
+        query_vector = await _embed_query(search_query)
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": _VECTOR_INDEX,
+                    "path": "embedding",
+                    "queryVector": query_vector,
+                    "numCandidates": 50,
+                    "limit": _TOP_K,
+                }
+            },
+            {
+                "$project": {
+                    "content": 1,
+                    "section": 1,
+                    "score": {"$meta": "vectorSearchScore"},
+                    "_id": 0,
+                }
+            },
+        ]
+
+        results = (
+            await get_db()["knowledge_chunks"]
+            .aggregate(pipeline)
+            .to_list(length=_TOP_K)
         )
-    except FileNotFoundError:
-        return "Системна помилка: файл бази знань не знайдено. Скажи клієнту, що інформація тимчасово недоступна."
+
+        if not results:
+            return (
+                "Інформацію не знайдено в базі знань. Скажи клієнту, що уточниш деталі."
+            )
+
+        lines = [f"Знайдено {len(results)} релевантних фрагментів:\n"]
+        for r in results:
+            lines.append(f"[{r['section']}]\n{r['content']}")
+            lines.append("---")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        print(f"[tool] read_knowledge_base error: {e}")
+        return "Системна помилка доступу до бази знань. Скажи клієнту, що інформація тимчасово недоступна."
 
 
 @honda_agent.tool
