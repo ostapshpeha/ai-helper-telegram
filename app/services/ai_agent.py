@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from google import genai
@@ -9,6 +10,8 @@ from pydantic_ai.models.google import GoogleModel
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.service import Mechanic, ServiceSlot, SlotStatus, Parts
+
+logger = logging.getLogger(__name__)
 
 os.environ.setdefault("GEMINI_API_KEY", settings.GEMINI_API_KEY)
 
@@ -60,7 +63,7 @@ async def read_knowledge_base(ctx: RunContext[None], search_query: str) -> str:
     Використовуй цей інструмент, щоб отримати інформацію про автомобілі Honda та Acura:
     комплектації, ціни, послуги салону, детейлінг.
     """
-    print(f"[tool] read_knowledge_base: '{search_query}'")
+    logger.info("read_knowledge_base: %s", search_query)
     try:
         query_vector = await _embed_query(search_query)
 
@@ -103,7 +106,7 @@ async def read_knowledge_base(ctx: RunContext[None], search_query: str) -> str:
         return "\n".join(lines)
 
     except Exception as e:
-        print(f"[tool] read_knowledge_base error: {e}")
+        logger.exception("read_knowledge_base failed")
         return "Системна помилка доступу до бази знань. Скажи клієнту, що інформація тимчасово недоступна."
 
 
@@ -113,7 +116,7 @@ async def read_db_slots(ctx: RunContext[None], search_query: str) -> str:
     Використовуй цей інструмент, коли клієнт хоче записатися на сервіс
     або питає про вільні дати та час прийому.
     """
-    print(f"[tool] read_db_slots: '{search_query}'")
+    logger.info("read_db_slots: %s", search_query)
     try:
         slots = await ServiceSlot.find(
             ServiceSlot.status == SlotStatus.AVAILABLE
@@ -141,7 +144,7 @@ async def read_db_slots(ctx: RunContext[None], search_query: str) -> str:
         return "\n".join(lines)
 
     except Exception as e:
-        print(f"[tool] read_db_slots error: {e}")
+        logger.exception("read_db_slots failed")
         return "Виникла технічна помилка доступу до бази даних. Скажи клієнту, що система запису тимчасово недоступна."
 
 
@@ -151,7 +154,7 @@ async def read_parts_price(ctx: RunContext[None], search_query: str) -> str:
     Використовуй цей інструмент, коли клієнт питає про ціну на конкретну запчастину.
     search_query — назва деталі, яку шукає клієнт.
     """
-    print(f"[tool] read_parts_price: '{search_query}'")
+    logger.info("read_parts_price: %s", search_query)
     try:
         parts = await Parts.find(
             {"name": {"$regex": search_query, "$options": "i"}}
@@ -173,5 +176,5 @@ async def read_parts_price(ctx: RunContext[None], search_query: str) -> str:
         return "\n".join(lines)
 
     except Exception as e:
-        print(f"[tool] read_parts_price error: {e}")
+        logger.exception("read_parts_price failed")
         return "Виникла технічна помилка. Скажи клієнту, що ціни тимчасово недоступні."
