@@ -6,8 +6,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 from app.models.knowledge import KnowledgeChunk
-from app.models.ligtning import ChatLog
-from app.models.service import Mechanic, ServiceSlot, Parts
 
 _db: AsyncIOMotorDatabase | None = None
 
@@ -25,6 +23,6 @@ async def init_db():
 
     await init_beanie(
         database=_db,
-        document_models=[Mechanic, ServiceSlot, ChatLog, Parts, KnowledgeChunk],
+        document_models=[KnowledgeChunk],
     )
     logger.info("Connected to MongoDB: %s", settings.MONGO_DB_NAME)

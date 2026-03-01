@@ -10,7 +10,6 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
 from app.services.ai_agent import honda_agent, AgentDeps
-from app.services.chat_history import save_chat_turn
 from app.services.moderation import (
     is_banned,
     is_rate_limited,
@@ -42,9 +41,9 @@ async def command_start_handler(message: types.Message) -> None:
     user_sessions[message.from_user.id] = []
     await message.answer(
         f"Вітаю, {message.from_user.full_name}! 👋\n\n"
-        "Я — ШІ-консультант дилерського центру Honda. "
-        "Можу розповісти про комплектації, підказати вартість запчастин "
-        "або допомогти із записом на сервіс. Чим можу допомогти?"
+        "Я — ШІ-консультант дилерського центру Honda та Acura. "
+        "Можу розповісти про комплектації, послуги та відповісти на ваші запитання. "
+        "Чим можу допомогти?"
     )
 
 
@@ -131,13 +130,6 @@ async def handle_user_message(message: types.Message) -> None:
         )
         await message.answer(result.output)
         user_sessions[user_id] = result.all_messages()
-
-        await save_chat_turn(
-            user_id=user_id,
-            user_message=user_text,
-            agent_response=result.output,
-            tools_called=[],
-        )
 
     except Exception:
         logger.exception("Agent error for user %s", user_id)
