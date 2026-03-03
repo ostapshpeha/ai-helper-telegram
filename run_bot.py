@@ -3,12 +3,16 @@ import logging
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from beanie import PydanticObjectId
 
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
+from app.models.ligtning import ChatLog, FeedbackScore
 from app.services.ai_agent import honda_agent, AgentDeps
 from app.services.chat_history import save_chat_turn
 from app.services.moderation import (
@@ -21,6 +25,12 @@ from app.services.moderation import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class FeedbackCallback(CallbackData, prefix="fb"):
+    log_id: str
+    score: int  # 1 = positive, -1 = negative
+
 
 bot = Bot(
     token=settings.TELEGRAM_BOT_TOKEN,
@@ -129,19 +139,46 @@ async def handle_user_message(message: types.Message) -> None:
             deps=AgentDeps(bot=bot, user_id=user_id),
             message_history=history,
         )
-        await message.answer(result.output)
-        user_sessions[user_id] = result.all_messages()
 
-        await save_chat_turn(
+        chat_log = await save_chat_turn(
             user_id=user_id,
             user_message=user_text,
             agent_response=result.output,
             tools_called=[],
         )
 
+        keyboard = None
+        if chat_log:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="👍",
+                    callback_data=FeedbackCallback(log_id=str(chat_log.id), score=1).pack()
+                ),
+                InlineKeyboardButton(
+                    text="👎",
+                    callback_data=FeedbackCallback(log_id=str(chat_log.id), score=-1).pack()
+                ),
+            ]])
+
+        await message.answer(result.output, reply_markup=keyboard)
+        user_sessions[user_id] = result.all_messages()
+
     except Exception:
         logger.exception("Agent error for user %s", user_id)
         await message.answer("Перепрошую, виникла технічна заминка. Спробуйте запитати ще раз.")
+
+
+@dp.callback_query(FeedbackCallback.filter())
+async def handle_feedback(callback: types.CallbackQuery, callback_data: FeedbackCallback) -> None:
+    try:
+        log = await ChatLog.get(PydanticObjectId(callback_data.log_id))
+        if log:
+            log.feedback = FeedbackScore(callback_data.score)
+            await log.save()
+    except Exception:
+        logger.exception("Failed to save feedback for log %s", callback_data.log_id)
+    await callback.answer("Дякуємо за відгук!")
+    await callback.message.edit_reply_markup(reply_markup=None)
 
 
 async def main() -> None:

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "honda_db"
     MONGO_DB_PASSWORD: str = ""
     GEMINI_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
 
     TELEGRAM_BOT_TOKEN: str = ""
     STAFF_CHAT_ID: int = 0
