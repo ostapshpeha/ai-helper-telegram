@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Моделі Honda та Acura</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="page">
+  <div id="list-view">
+    <div class="page-title">Модельний ряд</div>
+    <div class="page-subtitle">Honda та Acura в нашому салоні</div>
+    <div id="loading"><div class="skeleton"></div><div class="skeleton"></div></div>
+    <div class="model-grid" id="grid"></div>
+  </div>
+
+  <div id="detail-view" style="display:none">
+    <button id="back-btn" style="
+      background:none;border:none;
+      color:var(--tg-theme-link-color,#2481cc);
+      font-size:15px;cursor:pointer;padding:0 0 16px;
+      display:flex;align-items:center;gap:6px;
+    ">‹ Назад</button>
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:48px;margin-bottom:8px" id="det-emoji"></div>
+      <div style="font-size:22px;font-weight:700" id="det-name"></div>
+    </div>
+    <div id="det-specs"></div>
+    <div style="height:80px"></div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+tg.BackButton.show();
+tg.BackButton.onClick(() => tg.close());
+
+const SPECS = {
+  'Honda City':   { emoji:'🚗', engine:'1.5L i-VTEC', power:'120 к.с.', drive:'Передній', body:'Седан', desc:'Компактний міський автомобіль з низьким споживанням палива.' },
+  'Honda Civic':  { emoji:'🏎', engine:'1.5L Turbo', power:'182 к.с.', drive:'Передній', body:'Седан / Хетчбек', desc:'Спортивний дух у щоденному використанні.' },
+  'Honda Accord': { emoji:'🚙', engine:'2.0L Turbo / Hybrid', power:'192 к.с.', drive:'Передній', body:'Седан', desc:'Бізнес-клас з преміальним комфортом.' },
+  'Honda CR-V':   { emoji:'🚐', engine:'1.5L Turbo / 2.0L Hybrid', power:'193 к.с.', drive:'Повний / Передній', body:'Кросовер', desc:'Найпопулярніший кросовер Honda у світі.' },
+  'Honda HR-V':   { emoji:'🚕', engine:'1.5L i-VTEC', power:'131 к.с.', drive:'Передній', body:'Кросовер', desc:'Компактний кросовер з великим простором.' },
+  'Honda ZR-V':   { emoji:'🛻', engine:'2.0L Hybrid', power:'184 к.с.', drive:'Повний', body:'Кросовер', desc:'Новий кросовер Honda із системою e:HEV.' },
+  'Honda Pilot':  { emoji:'🚌', engine:'3.5L V6', power:'285 к.с.', drive:'Повний', body:'Позашляховик', desc:'7-місцевий сімейний позашляховик.' },
+  'Honda Jazz':   { emoji:'🚗', engine:'1.5L Hybrid', power:'109 к.с.', drive:'Передній', body:'Хетчбек', desc:'Економний гібрид із Magic Seat.' },
+  'Acura ILX':    { emoji:'💎', engine:'2.4L DOHC', power:'201 к.с.', drive:'Передній', body:'Седан', desc:'Спортивний преміум-седан початкового рівня Acura.' },
+  'Acura TLX':    { emoji:'💫', engine:'2.0L Turbo', power:'272 к.с.', drive:'SH-AWD', body:'Седан', desc:'Флагманський седан Acura з SH-AWD.' },
+  'Acura RDX':    { emoji:'🌟', engine:'2.0L Turbo', power:'272 к.с.', drive:'SH-AWD', body:'Кросовер', desc:'Спортивний кросовер Acura.' },
+  'Acura MDX':    { emoji:'⭐', engine:'3.5L V6 / Hybrid', power:'290 к.с.', drive:'SH-AWD', body:'Позашляховик', desc:'Преміальний 7-місцевий позашляховик Acura.' },
+};
+
+async function loadModels() {
+  try {
+    const r = await fetch('/api/models', { headers: { 'X-Telegram-Init-Data': tg.initData } });
+    const models = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    renderGrid(models.map(m => m.name));
+  } catch {
+    document.getElementById('loading').innerHTML =
+      '<div class="empty-state">⚠️ Помилка завантаження</div>';
+  }
+}
+
+function renderGrid(names) {
+  const grid = document.getElementById('grid');
+  const toShow = names.length ? names : Object.keys(SPECS);
+  grid.innerHTML = toShow.map(name => {
+    const s = SPECS[name] || { emoji: '🚗' };
+    return `<div class="model-card" onclick="showDetail('${name.replace(/'/g,"\\'")}')">
+      <div class="model-emoji">${s.emoji}</div>
+      <div class="model-name">${name}</div>
+    </div>`;
+  }).join('');
+}
+
+function showDetail(name) {
+  const s = SPECS[name] || {};
+  document.getElementById('det-emoji').textContent = s.emoji || '🚗';
+  document.getElementById('det-name').textContent = name;
+
+  const rows = [
+    ['Двигун', s.engine], ['Потужність', s.power],
+    ['Привід', s.drive], ['Кузов', s.body],
+  ].filter(([, v]) => v);
+
+  document.getElementById('det-specs').innerHTML = `
+    ${s.desc ? `<div class="card" style="font-size:14px;color:var(--tg-theme-hint-color)">${s.desc}</div>` : ''}
+    <div class="confirm-panel">
+      ${rows.map(([l, v]) => `
+        <div class="confirm-row">
+          <span class="confirm-label">${l}</span>
+          <span class="confirm-value">${v}</span>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:14px">
+      <div class="section-title">Хочете записатись на тест-драйв?</div>
+      <div class="card" style="font-size:14px;cursor:pointer;color:var(--tg-theme-link-color)"
+           onclick="openCallback('${name.replace(/'/g,"\\'")}')">
+        📞 Залишити номер для передзвону →
+      </div>
+    </div>`;
+
+  document.getElementById('list-view').style.display = 'none';
+  document.getElementById('detail-view').style.display = 'block';
+
+  tg.MainButton.setText('Записатись на сервіс');
+  tg.MainButton.show();
+  tg.MainButton.onClick(() => {
+    location.href = `slots.html`;
+  });
+}
+
+function openCallback(model) {
+  location.href = `callback.html?issue=Тест-драйв: ${encodeURIComponent(model)}`;
+}
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('detail-view').style.display = 'none';
+  document.getElementById('list-view').style.display = 'block';
+  tg.MainButton.hide();
+});
+
+loadModels();
+</script>
+</body>
+</html>

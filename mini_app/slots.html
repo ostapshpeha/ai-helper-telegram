@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Запис на сервіс</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="page">
+  <div class="page-title">Запис на сервіс</div>
+  <div class="page-subtitle" id="subtitle">Оберіть зручний час</div>
+
+  <!-- Calendar -->
+  <div class="card" id="cal-card">
+    <div class="calendar-header">
+      <button class="cal-nav" id="prev-btn">‹</button>
+      <span id="month-label"></span>
+      <button class="cal-nav" id="next-btn">›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+
+  <!-- Time picker -->
+  <div id="time-section" style="display:none">
+    <div class="section-title" id="time-label"></div>
+    <div class="time-grid" id="time-grid"></div>
+  </div>
+
+  <!-- Phone input — shown after time selected -->
+  <div id="contact-section" style="display:none">
+    <div class="section-title">Залиште номер телефону</div>
+    <div class="confirm-panel" id="slot-summary"></div>
+    <div style="margin-top:14px">
+      <input id="phone" class="form-input" type="tel" inputmode="tel"
+             placeholder="+380 XX XXX XX XX" autocomplete="tel">
+    </div>
+    <div id="phone-error" style="color:red;font-size:13px;margin-top:6px;display:none">
+      Введіть коректний номер телефону
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+  <div id="empty" class="empty-state" style="display:none">
+    😔 Вільних слотів не знайдено.<br>Спробуйте інший день або залиште номер для передзвону.
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+tg.BackButton.show();
+tg.BackButton.onClick(() => tg.close());
+
+const params = new URLSearchParams(location.search);
+const spec = params.get('spec') || '';
+if (spec) document.getElementById('subtitle').textContent = `Спеціалізація: ${spec}`;
+
+let allSlots = [], slotsByDate = {};
+let currentYear, currentMonth;
+let selectedDate = null, selectedSlot = null;
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function fmtTime(iso) {
+  return new Date(iso).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+}
+function dateKey(iso) { return iso.slice(0, 10); }
+
+// ── fetch ─────────────────────────────────────────────────────────────────────
+
+async function loadSlots() {
+  try {
+    const url = `/api/slots${spec ? `?specialization=${encodeURIComponent(spec)}` : ''}`;
+    const r = await fetch(url, { headers: { 'X-Telegram-Init-Data': tg.initData } });
+    allSlots = await r.json();
+    slotsByDate = {};
+    allSlots.forEach(s => {
+      const k = dateKey(s.start_time);
+      if (!slotsByDate[k]) slotsByDate[k] = [];
+      slotsByDate[k].push(s);
+    });
+    document.getElementById('loading').style.display = 'none';
+    if (!allSlots.length) {
+      document.getElementById('empty').style.display = 'block';
+      document.getElementById('cal-card').style.display = 'none';
+      return;
+    }
+    const now = new Date();
+    currentYear = now.getFullYear();
+    currentMonth = now.getMonth();
+    renderCalendar();
+  } catch {
+    document.getElementById('loading').innerHTML =
+      '<div class="empty-state">⚠️ Помилка завантаження. Спробуйте ще раз.</div>';
+  }
+}
+
+// ── calendar ──────────────────────────────────────────────────────────────────
+
+const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
+const MONTHS = ['Січень','Лютий','Березень','Квітень','Травень','Червень',
+                'Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'];
+
+function renderCalendar() {
+  document.getElementById('month-label').textContent = `${MONTHS[currentMonth]} ${currentYear}`;
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  DAYS.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'cal-day-name';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+  const startOffset = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7;
+  for (let i = 0; i < startOffset; i++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day empty';
+    grid.appendChild(el);
+  }
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(currentYear, currentMonth, day);
+    const key = date.toISOString().slice(0, 10);
+    const el = document.createElement('div');
+    el.textContent = day;
+    if (date < today) {
+      el.className = 'cal-day past';
+    } else if (slotsByDate[key]) {
+      el.className = 'cal-day available' + (selectedDate === key ? ' selected' : '');
+      el.addEventListener('click', () => selectDate(key));
+    } else {
+      el.className = 'cal-day';
+    }
+    grid.appendChild(el);
+  }
+}
+
+function selectDate(key) {
+  selectedDate = key;
+  selectedSlot = null;
+  tg.MainButton.hide();
+  renderCalendar();
+  renderTimeSlots(key);
+  document.getElementById('contact-section').style.display = 'none';
+  document.getElementById('time-section').style.display = 'block';
+  document.getElementById('time-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── time slots ────────────────────────────────────────────────────────────────
+
+function renderTimeSlots(key) {
+  const slots = slotsByDate[key] || [];
+  document.getElementById('time-label').textContent = fmtDate(slots[0].start_time);
+  const grid = document.getElementById('time-grid');
+  grid.innerHTML = '';
+  slots.forEach(s => {
+    const pill = document.createElement('div');
+    pill.className = 'time-pill' + (selectedSlot?.id === s.id ? ' selected' : '');
+    pill.textContent = fmtTime(s.start_time);
+    pill.addEventListener('click', () => selectSlot(s));
+    grid.appendChild(pill);
+  });
+}
+
+function selectSlot(slot) {
+  selectedSlot = slot;
+  renderTimeSlots(selectedDate);
+  showContactForm(slot);
+}
+
+// ── contact form ──────────────────────────────────────────────────────────────
+
+function showContactForm(slot) {
+  document.getElementById('slot-summary').innerHTML = `
+    <div class="confirm-row">
+      <span class="confirm-label">Дата та час</span>
+      <span class="confirm-value">${fmtDate(slot.start_time)}, ${fmtTime(slot.start_time)}</span>
+    </div>
+    <div class="confirm-row">
+      <span class="confirm-label">Майстер</span>
+      <span class="confirm-value">${slot.mechanic_name}</span>
+    </div>`;
+
+  document.getElementById('contact-section').style.display = 'block';
+  document.getElementById('contact-section').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('phone').focus();
+
+  updateMainBtn();
+}
+
+function updateMainBtn() {
+  const phone = document.getElementById('phone').value.trim();
+  if (phone.length >= 10) {
+    tg.MainButton.setText('Надіслати заявку');
+    tg.MainButton.show();
+    tg.MainButton.enable();
+  } else if (selectedSlot) {
+    tg.MainButton.setText('Надіслати заявку');
+    tg.MainButton.show();
+    tg.MainButton.disable();
+  }
+}
+
+document.getElementById('phone').addEventListener('input', updateMainBtn);
+
+tg.MainButton.onClick(async () => {
+  const phone = document.getElementById('phone').value.trim();
+  if (!phone || phone.length < 10 || !selectedSlot) return;
+
+  tg.MainButton.showProgress();
+
+  const slot = selectedSlot;
+  const issue = `Бажаний час запису: ${fmtDate(slot.start_time)} о ${fmtTime(slot.start_time)} (майстер: ${slot.mechanic_name})`;
+
+  try {
+    await fetch('/api/callback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Telegram-Init-Data': tg.initData,
+      },
+      body: JSON.stringify({ phone, issue }),
+    });
+
+    tg.MainButton.hideProgress();
+    tg.showPopup({
+      title: 'Заявку надіслано!',
+      message: 'Ми зателефонуємо вам для підтвердження запису.',
+      buttons: [{ type: 'ok' }],
+    }, () => tg.close());
+
+  } catch {
+    tg.MainButton.hideProgress();
+    document.getElementById('phone-error').textContent = 'Помилка відправки. Спробуйте ще раз.';
+    document.getElementById('phone-error').style.display = 'block';
+  }
+});
+
+// ── nav ───────────────────────────────────────────────────────────────────────
+
+document.getElementById('prev-btn').addEventListener('click', () => {
+  if (--currentMonth < 0) { currentMonth = 11; currentYear--; }
+  selectedDate = null; selectedSlot = null;
+  document.getElementById('time-section').style.display = 'none';
+  document.getElementById('contact-section').style.display = 'none';
+  tg.MainButton.hide();
+  renderCalendar();
+});
+
+document.getElementById('next-btn').addEventListener('click', () => {
+  if (++currentMonth > 11) { currentMonth = 0; currentYear++; }
+  selectedDate = null; selectedSlot = null;
+  document.getElementById('time-section').style.display = 'none';
+  document.getElementById('contact-section').style.display = 'none';
+  tg.MainButton.hide();
+  renderCalendar();
+});
+
+loadSlots();
+</script>
+</body>
+</html>

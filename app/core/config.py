@@ -7,11 +7,11 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "honda_db"
     MONGO_DB_PASSWORD: str = ""
     GEMINI_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
 
     TELEGRAM_BOT_TOKEN: str = ""
     STAFF_CHAT_ID: int = 0
     ADMIN_IDS: list[int] = []
+    MINI_APP_URL: str = ""  # Public HTTPS URL where mini_app/ is served, e.g. https://yourdomain.com/mini-app
 
     model_config = SettingsConfigDict(env_file=".env")
 
