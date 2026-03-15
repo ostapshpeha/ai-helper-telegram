@@ -7,13 +7,16 @@ from urllib.parse import parse_qs
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.service import Mechanic, Parts, ServiceSlot, SlotStatus
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/api", tags=["mini-app"])
 
 
@@ -57,7 +60,9 @@ def verify_init_data(x_telegram_init_data: str = Header(default="")) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/slots")
+@limiter.limit("30/minute")
 async def get_slots(
+    request: Request,
     specialization: str = "",
     _: None = Depends(verify_init_data),
 ):
@@ -98,7 +103,9 @@ async def get_slots(
 
 
 @router.get("/parts")
+@limiter.limit("30/minute")
 async def get_parts(
+    request: Request,
     q: str = "",
     _: None = Depends(verify_init_data),
 ):
@@ -120,7 +127,8 @@ async def get_parts(
 
 
 @router.get("/models")
-async def get_models(_: None = Depends(verify_init_data)):
+@limiter.limit("30/minute")
+async def get_models(request: Request, _: None = Depends(verify_init_data)):
     pipeline = [
         {"$unwind": "$models"},
         {"$group": {"_id": "$models.name"}},
@@ -147,7 +155,9 @@ class CallbackRequest(BaseModel):
 
 
 @router.post("/callback")
+@limiter.limit("5/minute")
 async def post_callback(
+    request: Request,
     data: CallbackRequest,
     _: None = Depends(verify_init_data),
 ):
