@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Ціни на запчастини</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="page">
+  <div class="page-title">Запчастини</div>
+  <div class="page-subtitle">Ціни актуальні на момент останнього оновлення бази</div>
+
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input id="search" class="search-input" type="search"
+           placeholder="Назва деталі…" autocomplete="off">
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+tg.BackButton.show();
+tg.BackButton.onClick(() => tg.close());
+
+const resultsEl = document.getElementById('results');
+
+function skeleton() {
+  resultsEl.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+}
+
+function render(parts) {
+  if (!parts.length) {
+    resultsEl.innerHTML = '<div class="empty-state">😔 Нічого не знайдено</div>';
+    return;
+  }
+  resultsEl.innerHTML = parts.map(p => {
+    const models = p.models.map(m => `${m.name} ${m.year}`).join(', ');
+    return `
+      <div class="part-card">
+        <div class="part-name">${esc(p.name)}</div>
+        <div class="part-price">${p.price.toLocaleString('uk-UA')} грн</div>
+        ${models ? `<div class="part-models">Для: ${esc(models)}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+let timer;
+async function search(q) {
+  skeleton();
+  try {
+    const url = `/api/parts${q ? `?q=${encodeURIComponent(q)}` : ''}`;
+    const r = await fetch(url, { headers: { 'X-Telegram-Init-Data': tg.initData } });
+    render(await r.json());
+  } catch {
+    resultsEl.innerHTML = '<div class="empty-state">⚠️ Помилка завантаження</div>';
+  }
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  clearTimeout(timer);
+  timer = setTimeout(() => search(e.target.value.trim()), 350);
+});
+
+search('');
+</script>
+</body>
+</html>

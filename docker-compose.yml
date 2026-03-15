@@ -12,3 +12,9 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+
+  reporter:
+    build: .
+    command: python report_bot.py
+    env_file: .env
+    restart: "no"

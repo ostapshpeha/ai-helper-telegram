@@ -20,7 +20,8 @@ COPY --from=builder /app/.venv .venv
 # Copy application code
 COPY app/ app/
 COPY data/ data/
-COPY run_bot.py run_migrations.py embed_data.py ./
+COPY mini_app/ mini_app/
+COPY run_bot.py run_migrations.py embed_data.py report_bot.py ./
 
 ENV PATH="/app/.venv/bin:$PATH"
 

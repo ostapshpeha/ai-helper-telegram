@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     STAFF_CHAT_ID: int = 0
     ADMIN_IDS: list[int] = []
+    MINI_APP_URL: str = ""  # Public HTTPS URL where mini_app/ is served, e.g. https://yourdomain.com/mini-app
 
     model_config = SettingsConfigDict(env_file=".env")
 
